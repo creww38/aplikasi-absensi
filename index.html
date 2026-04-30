@@ -29,8 +29,6 @@
     ::-webkit-scrollbar { width: 6px; }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .view-section { display: none; }
-    .view-section.active { display: block; }
     
     /* Loading Animation */
     .loader {
@@ -108,33 +106,27 @@
   <!-- LOADING PAGE WITH PROGRESS BAR -->
   <div id="loadingPage" class="fixed inset-0 z-[100] bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center">
     <div class="text-center px-6 max-w-md w-full">
-      <!-- Logo / Gambar -->
       <div class="mb-8 animate-bounce">
         <div class="w-28 h-28 mx-auto rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border-2 border-white/20 shadow-xl overflow-hidden">
-          <img src="https://files.catbox.moe/k2fooa.png" alt="Logo" class="w-20 h-20 object-contain">
+          <img src="https://files.catbox.moe/3od6ig.png" alt="Logo" class="w-20 h-20 object-contain">
         </div>
       </div>
       
-      <!-- Title -->
       <h1 class="text-2xl font-bold text-white mb-2">Sistem Absensi Pintar</h1>
       <p class="text-indigo-200 text-sm mb-8">MA Plus Keterampilan Tarbiyatusshibyan</p>
       
-      <!-- Progress Bar -->
       <div class="progress-bar mb-6">
         <div id="progressFill" class="progress-fill"></div>
       </div>
       
-      <!-- Loading Steps -->
       <div class="space-y-3 text-left max-w-xs mx-auto mb-6">
         <div id="step1" class="loading-step">
-          <i class="fas fa-circle-notch fa-spin hidden"></i>
-          <i class="fas fa-check-circle hidden"></i>
           <i class="fas fa-spinner"></i>
           <span>Memeriksa koneksi...</span>
         </div>
         <div id="step2" class="loading-step">
           <i class="fas fa-spinner"></i>
-          <span>Memuat konfigurasi sistem...</span>
+          <span>Mempersiapkan aplikasi...</span>
         </div>
         <div id="step3" class="loading-step">
           <i class="fas fa-spinner"></i>
@@ -142,14 +134,12 @@
         </div>
         <div id="step4" class="loading-step">
           <i class="fas fa-spinner"></i>
-          <span>Mempersiapkan dashboard...</span>
+          <span>Menyiapkan tampilan...</span>
         </div>
       </div>
       
-      <!-- Loading Text -->
       <p id="loadingText" class="text-indigo-300 text-xs mt-4">Memulai sistem...</p>
       
-      <!-- Tips -->
       <div class="mt-8 p-3 bg-white/5 rounded-xl border border-white/10">
         <p class="text-indigo-300 text-[11px]"><i class="fas fa-lightbulb mr-1"></i> Pastikan koneksi internet stabil</p>
       </div>
@@ -236,7 +226,7 @@
   <!-- DASHBOARD CONTAINER -->
   <div id="dashboardContainer" class="hidden h-screen bg-gray-100"></div>
 
-  <!-- LOADING OVERLAY (Untuk proses simpan) -->
+  <!-- LOADING OVERLAY -->
   <div id="loadingOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center">
     <div class="bg-white rounded-2xl p-4 flex flex-col items-center shadow-2xl">
       <div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-2"></div>
@@ -261,10 +251,10 @@
     let currentStep = 0;
     
     const steps = [
-      { id: 'step1', text: 'Memeriksa koneksi...', icon: 'fa-wifi' },
-      { id: 'step2', text: 'Memuat konfigurasi sistem...', icon: 'fa-cog' },
-      { id: 'step3', text: 'Menghubungkan ke server...', icon: 'fa-server' },
-      { id: 'step4', text: 'Mempersiapkan dashboard...', icon: 'fa-tachometer-alt' }
+      { id: 'step1', text: 'Memeriksa koneksi...' },
+      { id: 'step2', text: 'Mempersiapkan aplikasi...' },
+      { id: 'step3', text: 'Menghubungkan ke server...' },
+      { id: 'step4', text: 'Menyiapkan tampilan...' }
     ];
     
     function updateLoadingProgress(progress, stepIndex, message) {
@@ -274,7 +264,6 @@
       if (progressFill) progressFill.style.width = `${progress}%`;
       if (loadingText && message) loadingText.textContent = message;
       
-      // Update steps
       for (let i = 0; i < steps.length; i++) {
         const stepEl = document.getElementById(steps[i].id);
         if (stepEl) {
@@ -282,78 +271,56 @@
           if (i < stepIndex) {
             stepEl.classList.remove('active');
             stepEl.classList.add('completed');
-            if (iconSpan) {
-              iconSpan.className = 'fas fa-check-circle';
-            }
+            if (iconSpan) iconSpan.className = 'fas fa-check-circle';
           } else if (i === stepIndex) {
             stepEl.classList.add('active');
             stepEl.classList.remove('completed');
-            if (iconSpan) {
-              iconSpan.className = 'fas fa-circle-notch fa-spin';
-            }
+            if (iconSpan) iconSpan.className = 'fas fa-circle-notch fa-spin';
           } else {
             stepEl.classList.remove('active', 'completed');
-            if (iconSpan) {
-              iconSpan.className = 'fas fa-spinner';
-            }
+            if (iconSpan) iconSpan.className = 'fas fa-spinner';
           }
         }
       }
     }
     
     async function runLoadingSequence() {
-      // Step 1: Check connection
       updateLoadingProgress(10, 0, 'Memeriksa koneksi internet...');
-      await new Promise(r => setTimeout(r, 500));
-      
+      await new Promise(r => setTimeout(r, 400));
       updateLoadingProgress(25, 0, 'Koneksi stabil ✓');
       await new Promise(r => setTimeout(r, 300));
       
-      // Step 2: Load config
-      updateLoadingProgress(35, 1, 'Memuat konfigurasi sistem...');
+      updateLoadingProgress(35, 1, 'Mempersiapkan aplikasi...');
       await new Promise(r => setTimeout(r, 400));
-      
-      updateLoadingProgress(50, 1, 'Konfigurasi dimuat ✓');
+      updateLoadingProgress(50, 1, 'Aplikasi siap ✓');
       await new Promise(r => setTimeout(r, 300));
       
-      // Step 3: Connect to server
       updateLoadingProgress(60, 2, 'Menghubungkan ke server...');
-      
-      // Test API connection
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         const response = await fetch('https://attendance-api-ivory.vercel.app/api/health', { signal: controller.signal });
         clearTimeout(timeoutId);
-        if (response.ok) {
-          updateLoadingProgress(75, 2, 'Koneksi server berhasil ✓');
-        } else {
-          updateLoadingProgress(75, 2, 'Koneksi server (mode offline)');
-        }
+        if (response.ok) updateLoadingProgress(75, 2, 'Koneksi server berhasil ✓');
+        else updateLoadingProgress(75, 2, 'Koneksi server (mode offline)');
       } catch (e) {
         updateLoadingProgress(75, 2, 'Mode offline - menggunakan cache');
       }
       await new Promise(r => setTimeout(r, 400));
       
-      // Step 4: Prepare dashboard
-      updateLoadingProgress(85, 3, 'Mempersiapkan dashboard...');
+      updateLoadingProgress(85, 3, 'Menyiapkan tampilan...');
       await new Promise(r => setTimeout(r, 300));
-      
-      updateLoadingProgress(95, 3, 'Dashboard siap ✓');
+      updateLoadingProgress(95, 3, 'Tampilan siap ✓');
       await new Promise(r => setTimeout(r, 300));
       
       updateLoadingProgress(100, 4, 'Selesai! Mengalihkan ke halaman login...');
       await new Promise(r => setTimeout(r, 500));
       
-      // Hide loading page, show login page
       document.getElementById('loadingPage').style.display = 'none';
       document.getElementById('loginPage').classList.remove('hidden');
     }
     
-    // Start loading sequence when page loads
-    window.addEventListener('DOMContentLoaded', () => {
-      runLoadingSequence();
-    });
+    window.addEventListener('DOMContentLoaded', () => { runLoadingSequence(); });
 
     // ==========================================================================
     // KONFIGURASI
@@ -376,10 +343,9 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
       try {
-        const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-          method, headers: { 'Content-Type': 'application/json', ...(token && { 'Authorization': `Bearer ${token}` }) },
-          body: body ? JSON.stringify(body) : null, signal: controller.signal
-        });
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null, signal: controller.signal });
         clearTimeout(timer);
         return await res.json();
       } catch (e) {
@@ -389,7 +355,8 @@
     }
 
     async function loadAppConfig() {
-      const result = await apiCall('/config', 'GET', null, currentUser?.token);
+      if (!currentUser?.token) return;
+      const result = await apiCall('/config', 'GET', null, currentUser.token);
       if (result.success && result.data) {
         appConfig = {
           jam_masuk_mulai: result.data.jam_masuk_mulai || '07:00',
@@ -660,7 +627,7 @@
     };
 
     // ==========================================================================
-    // DATA SISWA
+    // DATA SISWA (Simplified)
     // ==========================================================================
     async function loadDataSiswa() {
       const content = document.getElementById('mainContent');
@@ -679,13 +646,13 @@
     async function deleteSiswa(nisn, nama) { const conf = await Swal.fire({ title: 'Hapus?', text: `Hapus ${nama}?`, icon: 'warning', showCancelButton: true }); if (conf.isConfirmed) { showLoading(); const res = await apiCall(`/siswa/${nisn}`, 'DELETE', null, currentUser.token); hideLoading(); if (res.success) loadDataSiswa(); else showAlert('error', res.message); } }
 
     // ==========================================================================
-    // DATA GURU, MONITORING, REKAP
+    // DATA GURU, MONITORING, REKAP (Simplified)
     // ==========================================================================
     async function loadDataGuru() {
       const content = document.getElementById('mainContent');
       content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
       const res = await apiCall('/guru', 'GET', null, currentUser.token);
-      if (res.success) content.innerHTML = `<div class="bg-white rounded-xl overflow-hidden"><div class="p-4 border-b"><h3 class="font-bold">Data Guru</h3></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">Username</th><th class="p-3">Nama</th><th class="p-3">Kelas</th><th class="p-3">Role</th></tr></thead><tbody>${res.data.map(g=>`<tr class="border-b"><td class="p-3">${g.username}</td><td class="p-3">${g.nama}</td><td class="p-3">${g.kelas||'-'}</td><td class="p-3"><span class="px-2 py-1 rounded text-xs ${g.role==='admin'?'bg-purple-100 text-purple-700':'bg-gray-100'}">${g.role}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+      if (res.success) content.innerHTML = `<div class="bg-white rounded-xl overflow-hidden"><div class="p-4 border-b"><h3 class="font-bold">Data Guru</h3></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">Username</th><th class="p-3">Nama</th><th class="p-3">Kelas</th><th class="p-3">Role</th><tr></thead><tbody>${res.data.map(g=>`<tr class="border-b"><td class="p-3">${g.username}</td><td class="p-3">${g.nama}</td><td class="p-3">${g.kelas||'-'}</td><td class="p-3"><span class="px-2 py-1 rounded text-xs ${g.role==='admin'?'bg-purple-100 text-purple-700':'bg-gray-100'}">${g.role}</span></td></tr>`).join('')}</tbody></table></div></div>`;
     }
 
     async function loadMonitoringAbsensi() {
@@ -786,56 +753,41 @@
 
     function startScanner() {
       if (scannerInitialized) {
-        if (html5QrCode) {
-          html5QrCode.stop().then(() => { initQrScanner(); }).catch(() => initQrScanner());
-        } else { initQrScanner(); }
+        if (html5QrCode) { html5QrCode.stop().then(() => { initQrScanner(); }).catch(() => initQrScanner()); }
+        else { initQrScanner(); }
       } else { initQrScanner(); }
     }
 
     function initQrScanner() {
       const qrReader = document.getElementById('qr-reader');
       if (!qrReader) return;
-      
       qrReader.innerHTML = '';
       html5QrCode = new Html5Qrcode("qr-reader");
       const config = { fps: 10, qrbox: { width: 300, height: 300 }, aspectRatio: 1.0 };
-      
       html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError)
         .then(() => { scannerInitialized = true; })
-        .catch((err) => { document.getElementById('qr-reader-results').innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg">Gagal mengakses kamera: ${err}</div>`; });
+        .catch((err) => { document.getElementById('qr-reader-results').innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg">Gagal akses kamera: ${err}</div>`; });
     }
 
     function onScanSuccess(decodedText, decodedResult) {
       if (isScanning) return;
       isScanning = true;
-      
       const scanTypeRadio = document.querySelector('input[name="scanType"]:checked');
       const type = scanTypeRadio ? scanTypeRadio.value : 'datang';
-      
       if (html5QrCode) { html5QrCode.stop().catch(() => {}); }
-      
       document.getElementById('qr-reader-results').innerHTML = `<div class="bg-indigo-100 text-indigo-700 p-3 rounded-lg animate-pulse"><i class="fas fa-spinner fa-spin mr-2"></i> Memproses...</div>`;
-      
       apiCall('/absensi/scan', 'POST', { nisn: decodedText, scannerRole: currentUser.role, scannerKelas: currentUser.kelas }, currentUser.token)
         .then(result => {
           const resultDiv = document.getElementById('qr-reader-results');
           if (result.success) {
             resultDiv.innerHTML = `<div class="bg-green-100 text-green-700 p-3 rounded-lg"><i class="fas fa-check-circle mr-2"></i> ${result.message}</div>`;
-            setTimeout(() => {
-              isScanning = false;
-              if (currentUser.role === 'admin') loadAdminDashboard();
-              else if (currentUser.role === 'guru') loadGuruDashboard();
-              else loadSiswaDashboard();
-            }, 2000);
+            setTimeout(() => { isScanning = false; refreshDashboard(); }, 2000);
           } else {
             resultDiv.innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg"><i class="fas fa-times-circle mr-2"></i> ${result.message}</div>`;
             setTimeout(() => { isScanning = false; startScanner(); }, 3000);
           }
         })
-        .catch(err => {
-          document.getElementById('qr-reader-results').innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg">Error: ${err.message}</div>`;
-          setTimeout(() => { isScanning = false; startScanner(); }, 3000);
-        });
+        .catch(err => { document.getElementById('qr-reader-results').innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg">Error: ${err.message}</div>`; setTimeout(() => { isScanning = false; startScanner(); }, 3000); });
     }
 
     function onScanError(errorMessage) {}
