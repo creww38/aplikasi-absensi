@@ -3,11 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Sistem Absensi Pintar</title>
+  <title>Sistem Absensi Pintar - Dengan Kalender Libur</title>
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Flatpickr Calendar CSS & JS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/id.js"></script>
   
   <script>
     tailwind.config = {
@@ -28,6 +33,35 @@
     .view-section.active { display: block; }
     .skeleton-card { background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%); background-size: 200% 100%; animation: loading 1.5s infinite; border-radius: 12px; }
     @keyframes loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    
+    /* Calendar Custom Styles */
+    .flatpickr-calendar {
+      border-radius: 16px !important;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+      font-family: 'Inter', sans-serif !important;
+    }
+    .flatpickr-day.selected {
+      background: #e11d48 !important;
+      border-color: #e11d48 !important;
+    }
+    .flatpickr-day.inRange, .flatpickr-day.prevMonthDay.inRange, .flatpickr-day.nextMonthDay.inRange {
+      background: #fce7f3 !important;
+      border-color: #fce7f3 !important;
+      color: #be123c !important;
+    }
+    .calendar-holiday {
+      background: #fecdd3 !important;
+      color: #be123c !important;
+      font-weight: bold !important;
+      position: relative;
+    }
+    .calendar-holiday::after {
+      content: '🎉';
+      position: absolute;
+      font-size: 10px;
+      bottom: 0;
+      right: 2px;
+    }
   </style>
 </head>
 <body class="bg-slate-900 font-sans antialiased overflow-x-hidden">
@@ -49,11 +83,11 @@
     <div class="relative z-10 w-full max-w-5xl bg-white/10 backdrop-blur-2xl rounded-3xl shadow-2xl overflow-hidden border border-white/10 flex flex-col lg:flex-row animate-fade-in">
       <!-- LEFT PANEL -->
       <div class="w-full lg:w-5/12 relative p-8 flex flex-col justify-center items-center text-white overflow-hidden">
-        <div class="absolute inset-0 bg-cover bg-center" style="background-image: url('https://files.catbox.moe/jl72ny.jpg');"></div>
+        <div class="absolute inset-0 bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1523050854058-8df90110c9f1?ixlib=rb-4.0.3&w=800&q=80');"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-indigo-900/90 via-indigo-900/60 to-indigo-900/40"></div>
         <div class="relative z-10 text-center">
           <div class="w-28 h-28 mx-auto mb-4 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border-2 border-white/30 overflow-hidden">
-            <img src="https://files.catbox.moe/3od6ig.png" alt="Logo" class="w-20 h-20 object-contain">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/Logo_Kementerian_Agama_RI.svg/1200px-Logo_Kementerian_Agama_RI.svg.png" alt="Logo" class="w-20 h-20 object-contain">
           </div>
           <h1 class="text-3xl font-bold text-white">MA Plus Keterampilan<br>Tarbiyatusshibyan</h1>
           <p class="text-indigo-200 text-sm mt-2">Platform manajemen kehadiran siswa terintegrasi</p>
@@ -119,7 +153,7 @@
     <p class="absolute bottom-4 text-slate-500 text-xs">© 2026 Sistem Absensi Sekolah</p>
   </div>
 
-  <!-- DASHBOARD (AWALNYA KOSONG, DIISI JS) -->
+  <!-- DASHBOARD CONTAINER -->
   <div id="dashboardContainer" class="hidden h-screen bg-gray-100"></div>
 
   <!-- LOADING OVERLAY -->
@@ -129,6 +163,9 @@
       <p class="text-gray-700 text-sm font-medium">Memproses...</p>
     </div>
   </div>
+
+  <!-- MODAL CONTAINER -->
+  <div id="modalContainer"></div>
 
   <!-- LOAD SCRIPTS ASYNC -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
@@ -145,6 +182,8 @@
     let html5QrCode = null;
     let adminChart = null;
     let guruChart = null;
+    let holidayCalendar = null;
+    let holidaysList = [];
 
     // Helper
     function showLoading() { document.getElementById('loadingOverlay')?.classList.remove('hidden'); }
@@ -242,17 +281,15 @@
     }
 
     // ==========================================================================
-    // DASHBOARD INIT - FAST, NO WAITING
+    // DASHBOARD INIT
     // ==========================================================================
     async function initDashboard() {
       const container = document.getElementById('dashboardContainer');
       const role = currentUser.role;
       const name = currentUser.nama || currentUser.username;
       
-      // Render sidebar dan layout dasar dulu (tanpa data)
       container.innerHTML = `
         <div class="flex h-screen">
-          <!-- SIDEBAR -->
           <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-64 bg-[rgb(26,25,103)] text-white transform -translate-x-full md:translate-x-0 transition-all duration-300 flex flex-col shadow-2xl">
             <div class="h-16 flex items-center px-6 border-b border-indigo-900/50">
               <div class="flex items-center space-x-3">
@@ -287,7 +324,6 @@
       
       document.getElementById('currentDateDisplay').innerText = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
       
-      // Buat menu
       const menuHtml = [];
       const menuItems = role === 'admin' ? 
         ['Dashboard', 'fa-home', 'loadAdminDashboard()'] :
@@ -299,7 +335,7 @@
         menuHtml.push(`<a onclick="loadDataGuru()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-chalkboard-teacher w-5"></i><span>Data Guru</span></a>`);
         menuHtml.push(`<a onclick="loadMonitoringAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-eye w-5"></i><span>Monitoring</span></a>`);
         menuHtml.push(`<a onclick="loadRekapAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-file-alt w-5"></i><span>Laporan</span></a>`);
-        menuHtml.push(`<a onclick="loadKelolaAbsen()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-calendar-times w-5"></i><span>Hari Libur</span></a>`);
+        menuHtml.push(`<a onclick="loadKelolaAbsen()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-calendar-alt w-5"></i><span>Hari Libur</span></a>`);
         menuHtml.push(`<a onclick="loadScanAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-qrcode w-5"></i><span>Scan QR</span></a>`);
       } else if (role === 'guru') {
         menuHtml.push(`<a onclick="loadMonitoringAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-eye w-5"></i><span>Monitoring</span></a>`);
@@ -309,7 +345,6 @@
       }
       document.getElementById('sidebarMenu').innerHTML = menuHtml.join('');
       
-      // Load dashboard sesuai role (langsung render skeleton dulu, lalu data)
       if (role === 'admin') await loadAdminDashboard();
       else if (role === 'guru') await loadGuruDashboard();
       else await loadSiswaDashboard();
@@ -332,34 +367,108 @@
     }
 
     // ==========================================================================
-    // ADMIN DASHBOARD - FAST RENDER
+    // ADMIN DASHBOARD
     // ==========================================================================
     async function loadAdminDashboard() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `
-        <div class="space-y-6">
-          <div class="flex justify-between items-center"><h1 class="text-2xl font-bold">Dashboard Admin</h1><button onclick="refreshDashboard()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt mr-2"></i>Refresh</button></div>
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-            ${['Total', 'Hadir', 'Sakit', 'Izin', 'Alpa'].map(l => `<div class="bg-white p-5 rounded-xl shadow-sm"><div class="skeleton-card h-12 w-full"></div></div>`).join('')}
-          </div>
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 bg-white rounded-2xl p-6 h-80"><div class="skeleton-card h-full w-full"></div></div>
-            <div class="bg-white rounded-2xl p-6"><div class="skeleton-card h-40 w-full mb-4"></div><div class="skeleton-card h-40 w-full"></div></div>
-          </div>
-        </div>
-      `;
+      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
       
       const result = await apiCall('/absensi/monitoring', 'GET', null, currentUser.token);
       if (result.success) {
         const data = result.data;
         const total = data.length, hadir = data.filter(d=>d.status==='Hadir').length, sakit = data.filter(d=>d.status==='Sakit').length, izin = data.filter(d=>d.status==='Izin').length, alpa = data.filter(d=>d.status==='Alpa').length;
         content.innerHTML = `
-          <div class="space-y-6"><div class="flex justify-between"><h1 class="text-2xl font-bold">Dashboard Admin</h1><button onclick="refreshDashboard()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt mr-2"></i>Refresh</button></div>
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-4">${[['Total',total,'users','indigo'],['Hadir',hadir,'check','emerald'],['Sakit',sakit,'procedures','yellow'],['Izin',izin,'paper-plane','blue'],['Alpa',alpa,'times','red']].map(([l,v,i,c])=>`<div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-xs text-gray-400">${l}</p><div class="flex justify-between items-center mt-1"><h3 class="text-2xl font-bold">${v}</h3><div class="w-8 h-8 bg-${c}-100 text-${c}-600 rounded-lg flex items-center justify-center"><i class="fas fa-${i}"></i></div></div></div>`).join('')}</div>
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 bg-white rounded-2xl p-6"><canvas id="adminChart"></canvas></div><div class="bg-white rounded-2xl p-6"><h3 class="font-bold mb-4">Akses Cepat</h3><div class="space-y-3">${[['Data Siswa','user-graduate','loadDataSiswa()'],['Monitoring','eye','loadMonitoringAbsensi()'],['Laporan','file-alt','loadRekapAbsensi()'],['Scan QR','qrcode','loadScanAbsensi()']].map(([l,i,fn])=>`<button onclick="${fn}" class="w-full flex items-center p-3 rounded-xl border hover:bg-indigo-50"><div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mr-3"><i class="fas fa-${i}"></i></div><div class="font-bold text-sm">${l}</div></button>`).join('')}</div></div></div></div>
+          <div class="space-y-6">
+            <div class="flex justify-between items-center">
+              <div>
+                <h1 class="text-2xl font-bold">Dashboard Admin</h1>
+                <p class="text-gray-500 text-sm mt-1">Pusat kontrol data absensi sekolah</p>
+              </div>
+              <button onclick="refreshDashboard()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 transition">
+                <i class="fas fa-sync-alt mr-2"></i>Refresh
+              </button>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+              ${[
+                ['Total Siswa', total, 'users', 'indigo'],
+                ['Hadir', hadir, 'check', 'emerald'],
+                ['Sakit', sakit, 'procedures', 'yellow'],
+                ['Izin', izin, 'paper-plane', 'blue'],
+                ['Alpa', alpa, 'times', 'red']
+              ].map(([l,v,i,c]) => `
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-${c}-100 relative overflow-hidden group hover:shadow-md transition">
+                  <div class="absolute right-0 top-0 w-16 h-16 bg-${c}-50 rounded-bl-full -mr-2 -mt-2 transition-transform group-hover:scale-110"></div>
+                  <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider relative z-10">${l}</p>
+                  <div class="flex items-center justify-between mt-2 relative z-10">
+                    <h3 class="text-2xl font-bold text-gray-800">${v}</h3>
+                    <div class="w-8 h-8 bg-${c}-100 text-${c}-600 rounded-lg flex items-center justify-center">
+                      <i class="fas fa-${i}"></i>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center">
+                  <i class="fas fa-chart-bar text-indigo-500 mr-2"></i> Grafik Statistik Kehadiran
+                </h3>
+                <div class="relative w-full h-80">
+                  <canvas id="adminChart"></canvas>
+                </div>
+              </div>
+              
+              <div class="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                <h3 class="font-bold text-gray-800 mb-4 flex items-center text-sm">
+                  <i class="fas fa-bolt text-amber-500 mr-2"></i> Akses Cepat
+                </h3>
+                <div class="space-y-3">
+                  <button onclick="loadDataSiswa()" class="w-full flex items-center p-3 rounded-xl border border-gray-100 hover:bg-blue-50 hover:border-blue-200 transition-all group text-left">
+                    <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mr-3 group-hover:scale-110 transition"><i class="fas fa-user-graduate"></i></div>
+                    <div><div class="font-bold text-xs text-gray-700">Data Siswa</div><div class="text-[10px] text-gray-400">Kelola database siswa</div></div>
+                  </button>
+                  <button onclick="loadMonitoringAbsensi()" class="w-full flex items-center p-3 rounded-xl border border-gray-100 hover:bg-green-50 hover:border-green-200 transition-all group text-left">
+                    <div class="w-10 h-10 rounded-lg bg-green-100 text-green-600 flex items-center justify-center mr-3 group-hover:scale-110 transition"><i class="fas fa-eye"></i></div>
+                    <div><div class="font-bold text-xs text-gray-700">Monitoring</div><div class="text-[10px] text-gray-400">Pantau kehadiran realtime</div></div>
+                  </button>
+                  <button onclick="loadRekapAbsensi()" class="w-full flex items-center p-3 rounded-xl border border-gray-100 hover:bg-emerald-50 hover:border-emerald-200 transition-all group text-left">
+                    <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mr-3 group-hover:scale-110 transition"><i class="fas fa-file-alt"></i></div>
+                    <div><div class="font-bold text-xs text-gray-700">Laporan</div><div class="text-[10px] text-gray-400">Export & rekap data</div></div>
+                  </button>
+                  <button onclick="loadKelolaAbsen()" class="w-full flex items-center p-3 rounded-xl border border-gray-100 hover:bg-rose-50 hover:border-rose-200 transition-all group text-left">
+                    <div class="w-10 h-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center mr-3 group-hover:scale-110 transition"><i class="fas fa-calendar-alt"></i></div>
+                    <div><div class="font-bold text-xs text-gray-700">Hari Libur</div><div class="text-[10px] text-gray-400">Setting tanggal merah</div></div>
+                  </button>
+                  <button onclick="loadScanAbsensi()" class="w-full flex items-center p-3 rounded-xl border border-gray-100 hover:bg-purple-50 hover:border-purple-200 transition-all group text-left">
+                    <div class="w-10 h-10 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center mr-3 group-hover:scale-110 transition"><i class="fas fa-qrcode"></i></div>
+                    <div><div class="font-bold text-xs text-gray-700">Scan QR Code</div><div class="text-[10px] text-gray-400">Absensi cepat dengan kamera</div></div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         `;
+        
         const ctx = document.getElementById('adminChart')?.getContext('2d');
-        if (ctx) { if (adminChart) adminChart.destroy(); adminChart = new Chart(ctx, { type: 'bar', data: { labels: ['Hadir','Sakit','Izin','Alpa'], datasets: [{ data: [hadir,sakit,izin,alpa], backgroundColor: ['#10B981','#EAB308','#3B82F6','#EF4444'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } }); }
+        if (ctx) {
+          if (adminChart) adminChart.destroy();
+          adminChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ['Hadir', 'Sakit', 'Izin', 'Alpa', 'Belum Absen'],
+              datasets: [{
+                label: 'Jumlah Siswa',
+                data: [hadir, sakit, izin, alpa, total - (hadir + sakit + izin + alpa)],
+                backgroundColor: ['#10B981', '#EAB308', '#3B82F6', '#EF4444', '#9CA3AF'],
+                borderRadius: 8,
+                barPercentage: 0.5
+              }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true, grid: { borderDash: [2, 2] } } } }
+          });
+        }
       }
     }
 
@@ -375,9 +484,10 @@
         const data = result.data;
         const total = data.length, sakit = data.filter(d=>d.status==='Sakit').length, izin = data.filter(d=>d.status==='Izin').length, alpa = data.filter(d=>d.status==='Alpa').length, hadir = data.filter(d=>d.status==='Hadir').length;
         content.innerHTML = `
-          <div><div class="flex justify-between mb-6"><h1 class="text-2xl font-bold">Dashboard Guru</h1><button onclick="refreshDashboard()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt mr-2"></i>Refresh</button></div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">${[['Total',total,'users','indigo'],['Sakit',sakit,'procedures','yellow'],['Izin',izin,'paper-plane','blue'],['Alpa',alpa,'times','red']].map(([l,v,i,c])=>`<div class="bg-white p-5 rounded-xl"><p class="text-xs text-gray-400">${l}</p><h3 class="text-3xl font-bold">${v}</h3><div class="w-10 h-10 bg-${c}-100 text-${c}-600 rounded-lg flex items-center justify-center mt-2"><i class="fas fa-${i}"></i></div></div>`).join('')}</div>
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-white rounded-2xl p-6"><canvas id="guruChart"></canvas></div><div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white text-center"><div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl mx-auto mb-4"><i class="fas fa-qrcode"></i></div><h3 class="font-bold">Scan Absensi</h3><button onclick="loadScanAbsensi()" class="mt-4 bg-white text-indigo-700 px-6 py-2 rounded-lg text-sm font-bold w-full">Buka Scanner</button></div></div></div>
+          <div class="space-y-6">
+            <div class="flex justify-between items-center"><h1 class="text-2xl font-bold">Dashboard Guru</h1><button onclick="refreshDashboard()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt mr-2"></i>Refresh</button></div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">${[['Total',total,'users','indigo'],['Sakit',sakit,'procedures','yellow'],['Izin',izin,'paper-plane','blue'],['Alpa',alpa,'times','red']].map(([l,v,i,c])=>`<div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-xs text-gray-400">${l}</p><h3 class="text-3xl font-bold">${v}</h3><div class="w-10 h-10 bg-${c}-100 text-${c}-600 rounded-lg flex items-center justify-center mt-2"><i class="fas fa-${i}"></i></div></div>`).join('')}</div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-white rounded-2xl p-6"><canvas id="guruChart"></canvas></div><div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white text-center"><div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl mx-auto mb-4"><i class="fas fa-qrcode"></i></div><h3 class="font-bold">Scan Absensi</h3><button onclick="loadScanAbsensi()" class="mt-4 bg-white text-indigo-700 px-6 py-2 rounded-lg text-sm font-bold w-full">Buka Scanner</button></div></div></div>
         `;
         const ctx = document.getElementById('guruChart')?.getContext('2d');
         if (ctx) { if (guruChart) guruChart.destroy(); guruChart = new Chart(ctx, { type: 'bar', data: { labels: ['Hadir','Sakit','Izin','Alpa'], datasets: [{ data: [hadir,sakit,izin,alpa], backgroundColor: ['#10B981','#EAB308','#3B82F6','#EF4444'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } }); }
@@ -399,40 +509,274 @@
     }
 
     // ==========================================================================
-    // DATA SISWA (Fast dengan skeleton)
+    // KELOLA HARI LIBUR DENGAN KALENDER
+    // ==========================================================================
+    async function loadKelolaAbsen() {
+      const content = document.getElementById('mainContent');
+      content.innerHTML = `
+        <div class="space-y-6">
+          <div class="flex justify-between items-center">
+            <div>
+              <h1 class="text-2xl font-bold">Kelola Hari Libur</h1>
+              <p class="text-gray-500 text-sm mt-1">Atur tanggal-tanggal libur (siswa tidak bisa absen)</p>
+            </div>
+            <button onclick="refreshDashboard()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300 transition">
+              <i class="fas fa-arrow-left mr-2"></i>Kembali
+            </button>
+          </div>
+          
+          <!-- FORM TAMBAH LIBUR DENGAN KALENDER -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 bg-gradient-to-r from-rose-50 to-white">
+              <h3 class="font-bold text-gray-800 flex items-center">
+                <i class="fas fa-plus-circle text-rose-500 mr-2"></i> Tambah Hari Libur Baru
+              </h3>
+              <p class="text-xs text-gray-500 mt-1">Pilih tanggal dari kalender, isi keterangan, lalu simpan</p>
+            </div>
+            <div class="p-5">
+              <form onsubmit="addLibur(event)" class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1">
+                  <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Pilih Tanggal</label>
+                  <input type="text" id="calendarInput" placeholder="Klik untuk pilih tanggal" readonly class="w-full p-2.5 border border-gray-200 rounded-lg bg-white cursor-pointer focus:ring-rose-500 focus:border-rose-500">
+                </div>
+                <div class="flex-[2]">
+                  <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Keterangan Libur</label>
+                  <input type="text" id="keteranganLibur" placeholder="Contoh: Tahun Baru Islam / Cuti Bersama / Hari Raya" class="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-rose-500 focus:border-rose-500">
+                </div>
+                <div class="flex items-end">
+                  <button type="submit" class="bg-rose-600 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-rose-700 transition transform active:scale-95 w-full md:w-auto flex items-center justify-center gap-2">
+                    <i class="fas fa-save"></i> Simpan
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+          
+          <!-- KALENDER VIEW -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 bg-gray-50/50">
+              <h3 class="font-bold text-gray-800 flex items-center">
+                <i class="fas fa-calendar-alt text-rose-500 mr-2"></i> Kalender Hari Libur
+              </h3>
+              <p class="text-xs text-gray-500 mt-1">Tanggal dengan background merah muda adalah hari libur</p>
+            </div>
+            <div class="p-5">
+              <div id="holidayCalendar" class="flatpickr-calendar-demo"></div>
+            </div>
+          </div>
+          
+          <!-- DAFTAR HARI LIBUR -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+              <div>
+                <h3 class="font-bold text-gray-800 flex items-center">
+                  <i class="fas fa-list-ul text-rose-500 mr-2"></i> Daftar Hari Libur
+                </h3>
+                <p class="text-xs text-gray-500 mt-1">Kelola daftar tanggal libur yang sudah ditambahkan</p>
+              </div>
+              <button onclick="loadKelolaAbsen()" class="text-rose-600 hover:text-rose-700 text-sm">
+                <i class="fas fa-sync-alt mr-1"></i> Refresh
+              </button>
+            </div>
+            <div id="liburList" class="divide-y divide-gray-100">
+              <div class="p-8 text-center text-gray-400">
+                <i class="fas fa-spinner fa-pulse mr-2"></i> Memuat data...
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Load data libur dari API
+      const res = await apiCall('/config/holidays', 'GET', null, currentUser.token);
+      if (res.success) {
+        holidaysList = res.data;
+        renderLiburList(holidaysList);
+        initCalendar(holidaysList);
+      } else {
+        document.getElementById('liburList').innerHTML = `<div class="p-8 text-center text-red-500">Gagal memuat data: ${res.message}</div>`;
+      }
+    }
+
+    function renderLiburList(holidays) {
+      const container = document.getElementById('liburList');
+      if (holidays.length === 0) {
+        container.innerHTML = `
+          <div class="p-12 text-center">
+            <div class="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <i class="fas fa-calendar-day text-rose-400 text-2xl"></i>
+            </div>
+            <h4 class="font-bold text-gray-700">Belum Ada Hari Libur</h4>
+            <p class="text-gray-400 text-sm mt-1">Tambahkan hari libur menggunakan kalender di atas</p>
+          </div>
+        `;
+        return;
+      }
+      
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      container.innerHTML = `
+        <table class="w-full">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">No</th>
+              <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Tanggal</th>
+              <th class="p-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Keterangan</th>
+              <th class="p-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider w-24">Aksi</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            ${holidays.map((item, index) => `
+              <tr class="hover:bg-gray-50 transition group">
+                <td class="p-4 text-gray-500 text-sm">${index + 1}</td>
+                <td class="p-4 font-medium text-gray-700">
+                  <i class="fas fa-calendar-day text-rose-400 mr-2"></i>
+                  ${new Date(item.tanggal).toLocaleDateString('id-ID', options)}
+                </td>
+                <td class="p-4 text-gray-600">${item.keterangan}</td>
+                <td class="p-4 text-center">
+                  <button onclick="deleteLibur('${item.tanggal}')" class="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition" title="Hapus">
+                    <i class="fas fa-trash-alt"></i>
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function initCalendar(holidays) {
+      // Kumpulkan tanggal libur untuk ditandai di kalender
+      const holidayDates = holidays.map(h => h.tanggal);
+      
+      if (holidayCalendar) {
+        holidayCalendar.destroy();
+      }
+      
+      holidayCalendar = flatpickr("#calendarInput", {
+        locale: "id",
+        dateFormat: "Y-m-d",
+        altFormat: "j F Y",
+        altInput: true,
+        allowInput: false,
+        disable: [
+          function(date) {
+            // Nonaktifkan tanggal yang sudah lewat (opsional)
+            // return date < new Date();
+          }
+        ],
+        onDayCreate: function(dObj, dStr, fp, dayElem) {
+          // Tandai hari libur di kalender popup
+          const dateStr = dayElem.dateObj ? flatpickr.formatDate(dayElem.dateObj, "Y-m-d") : null;
+          if (dateStr && holidayDates.includes(dateStr)) {
+            dayElem.classList.add('calendar-holiday');
+            dayElem.title = "Hari Libur";
+          }
+        },
+        onChange: function(selectedDates, dateStr, instance) {
+          // Cek apakah tanggal yang dipilih sudah menjadi libur
+          if (holidayDates.includes(dateStr)) {
+            Swal.fire({
+              icon: 'warning',
+              title: 'Tanggal Sudah Libur',
+              text: `Tanggal ${dateStr} sudah terdaftar sebagai hari libur.`,
+              timer: 2000,
+              showConfirmButton: false
+            });
+          }
+        }
+      });
+    }
+
+    // ADD LIBUR dengan validasi
+    window.addLibur = async (e) => {
+      e.preventDefault();
+      const tanggalInput = document.getElementById('calendarInput');
+      const keteranganInput = document.getElementById('keteranganLibur');
+      const tanggal = tanggalInput?.value;
+      const keterangan = keteranganInput?.value;
+      
+      if (!tanggal) {
+        Swal.fire({ icon: 'warning', title: 'Pilih Tanggal', text: 'Silakan pilih tanggal dari kalender terlebih dahulu', confirmButtonText: 'OK' });
+        return;
+      }
+      if (!keterangan) {
+        Swal.fire({ icon: 'warning', title: 'Isi Keterangan', text: 'Silakan isi keterangan hari libur', confirmButtonText: 'OK' });
+        return;
+      }
+      
+      // Cek duplikat
+      if (holidaysList.some(h => h.tanggal === tanggal)) {
+        Swal.fire({ icon: 'error', title: 'Tanggal Sudah Ada', text: `Tanggal ${tanggal} sudah terdaftar sebagai hari libur`, confirmButtonText: 'OK' });
+        return;
+      }
+      
+      showLoading();
+      const res = await apiCall('/config/holidays', 'POST', { tanggal, keterangan }, currentUser.token);
+      hideLoading();
+      
+      if (res.success) {
+        Swal.fire({ icon: 'success', title: 'Berhasil!', text: `Hari libur ${tanggal} (${keterangan}) telah ditambahkan`, timer: 2000, showConfirmButton: false });
+        // Reset form
+        if (tanggalInput) tanggalInput.value = '';
+        if (keteranganInput) keteranganInput.value = '';
+        // Refresh halaman
+        loadKelolaAbsen();
+      } else {
+        Swal.fire({ icon: 'error', title: 'Gagal!', text: res.message || 'Terjadi kesalahan', confirmButtonText: 'OK' });
+      }
+    };
+
+    // DELETE LIBUR dengan konfirmasi
+    window.deleteLibur = async (tanggal) => {
+      const result = await Swal.fire({
+        title: 'Hapus Hari Libur?',
+        text: `Apakah Anda yakin ingin menghapus hari libur tanggal ${tanggal}?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        confirmButtonText: 'Ya, Hapus!',
+        cancelButtonText: 'Batal'
+      });
+      
+      if (result.isConfirmed) {
+        showLoading();
+        const res = await apiCall(`/config/holidays/${tanggal}`, 'DELETE', null, currentUser.token);
+        hideLoading();
+        
+        if (res.success) {
+          Swal.fire({ icon: 'success', title: 'Terhapus!', text: `Hari libur tanggal ${tanggal} telah dihapus`, timer: 1500, showConfirmButton: false });
+          loadKelolaAbsen();
+        } else {
+          Swal.fire({ icon: 'error', title: 'Gagal!', text: res.message || 'Terjadi kesalahan', confirmButtonText: 'OK' });
+        }
+      }
+    };
+
+    // ==========================================================================
+    // DATA SISWA (CRUD)
     // ==========================================================================
     async function loadDataSiswa() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="bg-white rounded-xl p-6"><div class="skeleton-card h-10 w-full mb-4"></div><div class="space-y-2">${Array(5).fill().map(()=>`<div class="skeleton-card h-16 w-full"></div>`).join('')}</div></div>`;
+      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
       const result = await apiCall('/siswa', 'GET', null, currentUser.token);
       if (result.success) {
-        const siswa = result.data.slice(0, 30);
+        const siswa = result.data.slice(0, 50);
         content.innerHTML = `
-          <div class="bg-white rounded-xl shadow-sm overflow-hidden"><div class="p-4 border-b flex justify-between items-center"><h3 class="font-bold">Data Siswa</h3><button onclick="showAddSiswaModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm"><i class="fas fa-plus mr-1"></i>Tambah</button></div><div class="p-4"><input type="text" id="searchSiswa" onkeyup="filterSiswa()" placeholder="Cari nama/NISN..." class="w-full p-2 border rounded-lg text-sm"></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3 text-left">No</th><th class="p-3 text-left">Nama</th><th class="p-3 text-left">NISN</th><th class="p-3 text-left">Kelas</th><th class="p-3 text-center">Aksi</th></tr></thead><tbody id="siswaTable">${siswa.map((s,i)=>`<tr class="border-b"><td class="p-3">${i+1}</td><td class="p-3 font-medium">${s.nama}</td><td class="p-3">${s.nisn}</td><td class="p-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">${s.kelas}</span></td><td class="p-3 text-center"><button onclick='editSiswaModal(${JSON.stringify(s).replace(/'/g, "&apos;")})' class="text-amber-600 mr-2"><i class="fas fa-edit"></i></button><button onclick="deleteSiswa('${s.nisn}','${s.nama}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div></div>
+          <div class="bg-white rounded-xl shadow-sm overflow-hidden"><div class="p-4 border-b flex justify-between items-center"><h3 class="font-bold">Data Siswa</h3><button onclick="showAddSiswaModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm"><i class="fas fa-plus mr-1"></i>Tambah</button></div><div class="p-4"><input type="text" id="searchSiswa" onkeyup="filterSiswa()" placeholder="Cari nama/NISN..." class="w-full p-2 border rounded-lg text-sm"></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">No</th><th class="p-3">Nama</th><th class="p-3">NISN</th><th class="p-3">Kelas</th><th class="p-3 text-center">Aksi</th></tr></thead><tbody id="siswaTable">${siswa.map((s,i)=>`<tr class="border-b"><td class="p-3">${i+1}</td><td class="p-3 font-medium">${s.nama}</td><td class="p-3">${s.nisn}</td><td class="p-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">${s.kelas}</span></td><td class="p-3 text-center"><button onclick='editSiswaModal(${JSON.stringify(s).replace(/'/g, "&apos;")})' class="text-amber-600 mr-2"><i class="fas fa-edit"></i></button><button onclick="deleteSiswa('${s.nisn}','${s.nama}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div></div>
         `;
       }
     }
 
-    window.filterSiswa = function() {
-      const keyword = document.getElementById('searchSiswa')?.value.toLowerCase() || '';
-      const rows = document.querySelectorAll('#siswaTable tr');
-      rows.forEach(row => {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(keyword) ? '' : 'none';
-      });
-    };
-
-    window.showAddSiswaModal = () => showModal(`
-      <div class="bg-white rounded-2xl p-6 max-w-md w-full"><h3 class="text-xl font-bold mb-4">Tambah Siswa</h3><form onsubmit="saveSiswa(event, false)"><input name="nama" placeholder="Nama" class="w-full p-2 border rounded mb-3" required><input name="nisn" placeholder="NISN" class="w-full p-2 border rounded mb-3" required><input name="kelas" placeholder="Kelas" class="w-full p-2 border rounded mb-3" required><div class="flex justify-end gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded">Batal</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Simpan</button></div></form></div>
-    `);
-    window.editSiswaModal = (s) => showModal(`
-      <div class="bg-white rounded-2xl p-6 max-w-md w-full"><h3 class="text-xl font-bold mb-4">Edit Siswa</h3><form onsubmit="saveSiswa(event, true)"><input name="nama" value="${s.nama}" class="w-full p-2 border rounded mb-3" required><input name="nisn" value="${s.nisn}" class="w-full p-2 border rounded mb-3 bg-gray-100" readonly><input name="kelas" value="${s.kelas}" class="w-full p-2 border rounded mb-3" required><input type="hidden" name="oldNisn" value="${s.nisn}"><div class="flex justify-end gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded">Batal</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Simpan</button></div></form></div>
-    `);
+    window.filterSiswa = function() { const keyword = document.getElementById('searchSiswa')?.value.toLowerCase() || ''; const rows = document.querySelectorAll('#siswaTable tr'); rows.forEach(row => { row.style.display = row.innerText.toLowerCase().includes(keyword) ? '' : 'none'; }); };
+    window.showAddSiswaModal = () => showModal(`<div class="bg-white rounded-2xl p-6 max-w-md w-full"><h3 class="text-xl font-bold mb-4">Tambah Siswa</h3><form onsubmit="saveSiswa(event, false)"><input name="nama" placeholder="Nama" class="w-full p-2 border rounded mb-3" required><input name="nisn" placeholder="NISN" class="w-full p-2 border rounded mb-3" required><input name="kelas" placeholder="Kelas" class="w-full p-2 border rounded mb-3" required><div class="flex justify-end gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded">Batal</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Simpan</button></div></form></div>`);
+    window.editSiswaModal = (s) => showModal(`<div class="bg-white rounded-2xl p-6 max-w-md w-full"><h3 class="text-xl font-bold mb-4">Edit Siswa</h3><form onsubmit="saveSiswa(event, true)"><input name="nama" value="${s.nama}" class="w-full p-2 border rounded mb-3" required><input name="nisn" value="${s.nisn}" class="w-full p-2 border rounded mb-3 bg-gray-100" readonly><input name="kelas" value="${s.kelas}" class="w-full p-2 border rounded mb-3" required><input type="hidden" name="oldNisn" value="${s.nisn}"><div class="flex justify-end gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded">Batal</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Simpan</button></div></form></div>`);
     async function saveSiswa(e, isEdit) { e.preventDefault(); showLoading(); const fd = new FormData(e.target); const data = { nama: fd.get('nama'), nisn: fd.get('nisn'), kelas: fd.get('kelas') }; let res; if (isEdit) res = await apiCall(`/siswa/${fd.get('oldNisn')}`, 'PUT', data, currentUser.token); else res = await apiCall('/siswa', 'POST', data, currentUser.token); hideLoading(); if (res.success) { closeModal(); loadDataSiswa(); showAlert('success', res.message); } else showAlert('error', res.message); }
     async function deleteSiswa(nisn, nama) { const conf = await Swal.fire({ title: 'Hapus?', text: `Hapus ${nama}?`, icon: 'warning', showCancelButton: true }); if (conf.isConfirmed) { showLoading(); const res = await apiCall(`/siswa/${nisn}`, 'DELETE', null, currentUser.token); hideLoading(); if (res.success) loadDataSiswa(); else showAlert('error', res.message); } }
 
     // ==========================================================================
-    // DATA GURU, MONITORING, REKAP (simplified, fast)
+    // DATA GURU, MONITORING, REKAP
     // ==========================================================================
     async function loadDataGuru() {
       const content = document.getElementById('mainContent');
@@ -457,26 +801,7 @@
       const content = document.getElementById('mainContent');
       content.innerHTML = `<div class="bg-white rounded-xl p-6"><div class="flex gap-4 mb-4"><input type="date" id="startDate" class="p-2 border rounded flex-1"><input type="date" id="endDate" class="p-2 border rounded flex-1"><button onclick="applyRekap()" class="bg-indigo-600 text-white px-4 rounded">Cari</button></div><div id="rekapResult" class="text-center text-gray-500 py-10">Pilih tanggal untuk melihat laporan</div></div>`;
     }
-    window.applyRekap = async () => {
-      const start = document.getElementById('startDate').value, end = document.getElementById('endDate').value;
-      if (!start || !end) return showAlert('error', 'Pilih tanggal');
-      showLoading();
-      const res = await apiCall(`/absensi?tanggalMulai=${start}&tanggalAkhir=${end}`, 'GET', null, currentUser.token);
-      hideLoading();
-      const resultDiv = document.getElementById('rekapResult');
-      if (res.success && res.data.length) {
-        resultDiv.innerHTML = `<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Tanggal</th><th class="p-2">Nama</th><th class="p-2">Kelas</th><th class="p-2">Datang</th><th class="p-2">Pulang</th></tr></thead><tbody>${res.data.map(d=>`<tr class="border-b"><td class="p-2">${d.tanggal}</td><td class="p-2">${d.nama}</td><td class="p-2">${d.kelas}</td><td class="p-2">${d.jamDatang}</td><td class="p-2">${d.jamPulang}</td></tr>`).join('')}</tbody></table></div>`;
-      } else resultDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Tidak ada data</div>';
-    };
-
-    async function loadKelolaAbsen() {
-      const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="bg-white rounded-xl p-6"><h3 class="font-bold mb-4">Hari Libur</h3><form onsubmit="addLibur(event)" class="flex gap-2 mb-4"><input type="date" name="tanggal" required class="p-2 border rounded flex-1"><input type="text" name="keterangan" placeholder="Keterangan" required class="p-2 border rounded flex-1"><button type="submit" class="bg-emerald-600 text-white px-4 rounded">Tambah</button></form><div id="liburList" class="space-y-2"></div></div>`;
-      const res = await apiCall('/config/holidays', 'GET', null, currentUser.token);
-      if (res.success) document.getElementById('liburList').innerHTML = res.data.map(l => `<div class="flex justify-between items-center p-3 border-b"><span>${l.tanggal} - ${l.keterangan}</span><button onclick="deleteLibur('${l.tanggal}')" class="text-red-500"><i class="fas fa-trash"></i></button></div>`).join('');
-    }
-    window.addLibur = async (e) => { e.preventDefault(); showLoading(); const fd = new FormData(e.target); const res = await apiCall('/config/holidays', 'POST', { tanggal: fd.get('tanggal'), keterangan: fd.get('keterangan') }, currentUser.token); hideLoading(); if (res.success) { loadKelolaAbsen(); showAlert('success', 'Ditambahkan'); } else showAlert('error', res.message); };
-    window.deleteLibur = async (tgl) => { showLoading(); const res = await apiCall(`/config/holidays/${tgl}`, 'DELETE', null, currentUser.token); hideLoading(); if (res.success) loadKelolaAbsen(); else showAlert('error', res.message); };
+    window.applyRekap = async () => { const start = document.getElementById('startDate').value, end = document.getElementById('endDate').value; if (!start || !end) return showAlert('error', 'Pilih tanggal'); showLoading(); const res = await apiCall(`/absensi?tanggalMulai=${start}&tanggalAkhir=${end}`, 'GET', null, currentUser.token); hideLoading(); const resultDiv = document.getElementById('rekapResult'); if (res.success && res.data.length) { resultDiv.innerHTML = `<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Tanggal</th><th class="p-2">Nama</th><th class="p-2">Kelas</th><th class="p-2">Datang</th><th class="p-2">Pulang</th></table></thead><tbody>${res.data.map(d=>`<tr class="border-b"><td class="p-2">${d.tanggal}</td><td class="p-2">${d.nama}</td><td class="p-2">${d.kelas}</td><td class="p-2">${d.jamDatang}</td><td class="p-2">${d.jamPulang}</td></tr>`).join('')}</tbody></table></div>`; } else resultDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Tidak ada data</div>'; };
 
     // ==========================================================================
     // SCANNER & KARTU
@@ -496,11 +821,7 @@
       setTimeout(() => new QRCode(document.getElementById("qrContainer"), { text: String(currentUser.nisn), width: 160, height: 160, colorDark: "#1f2937", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H }), 100);
     }
 
-    function refreshDashboard() {
-      if (currentUser.role === 'admin') loadAdminDashboard();
-      else if (currentUser.role === 'guru') loadGuruDashboard();
-      else loadSiswaDashboard();
-    }
+    function refreshDashboard() { if (currentUser.role === 'admin') loadAdminDashboard(); else if (currentUser.role === 'guru') loadGuruDashboard(); else loadSiswaDashboard(); }
 
     window.refreshDashboard = refreshDashboard;
     window.loadAdminDashboard = loadAdminDashboard;
@@ -517,10 +838,8 @@
     window.backToDashboard = backToDashboard;
     window.closeModal = closeModal;
 
-    function closeModal() { document.getElementById('modalContainer') ? document.getElementById('modalContainer').innerHTML = '' : null; }
-    const modalContainer = document.createElement('div'); modalContainer.id = 'modalContainer'; document.body.appendChild(modalContainer);
+    function closeModal() { const modal = document.getElementById('modalContainer'); if (modal) modal.innerHTML = ''; }
     
-    // Start
     checkSession();
   </script>
 </body>
