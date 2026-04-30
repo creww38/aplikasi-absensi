@@ -9,31 +9,17 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Inter', 'sans-serif'] },
-          colors: { primary: '#738862', secondary: '#10B981', dark: '#111827' }
-        }
-      }
-    }
-  </script>
-
   <style>
     ::-webkit-scrollbar { width: 6px; }
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .progress-bar { width: 100%; height: 6px; background: #e0e0e0; border-radius: 10px; overflow: hidden; }
-    .progress-fill { height: 100%; background: linear-gradient(90deg, #4f46e5, #7c3aed); width: 0%; transition: width 0.3s ease; }
-    .loading-step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9ca3af; transition: color 0.3s ease; }
-    .loading-step.active { color: #4f46e5; }
-    .loading-step.completed { color: #10b981; }
+    .debug-panel { background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 8px; max-height: 300px; overflow-y: auto; }
+    .debug-log { border-bottom: 1px solid #333; padding: 4px 0; }
+    .debug-success { color: #4ec9b0; }
+    .debug-error { color: #f48771; }
   </style>
 </head>
 <body class="bg-slate-900 font-sans antialiased overflow-x-hidden">
@@ -178,8 +164,22 @@
     let currentUser = null;
     let adminChart = null;
     let guruChart = null;
-    let scanner = null;
     let appConfig = { jam_masuk_mulai: '07:00', jam_masuk_akhir: '07:30', jam_pulang_mulai: '15:30', jam_pulang_akhir: '16:00' };
+    let debugLogs = [];
+
+    function addDebugLog(message, type = 'info') {
+      const log = { time: new Date().toLocaleTimeString(), message, type };
+      debugLogs.unshift(log);
+      if (debugLogs.length > 50) debugLogs.pop();
+      updateDebugPanel();
+      console.log(`[${type.toUpperCase()}]`, message);
+    }
+
+    function updateDebugPanel() {
+      let panel = document.getElementById('debugPanel');
+      if (!panel) return;
+      panel.innerHTML = debugLogs.map(log => `<div class="debug-log debug-${log.type}">[${log.time}] ${log.message}</div>`).join('');
+    }
 
     function showLoading() { document.getElementById('loadingOverlay')?.classList.remove('hidden'); }
     function hideLoading() { document.getElementById('loadingOverlay')?.classList.add('hidden'); }
@@ -191,12 +191,15 @@
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
+        addDebugLog(`API ${method} ${endpoint}`, 'info');
         const res = await fetch(`${API_BASE_URL}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null, signal: controller.signal });
         clearTimeout(timer);
-        if (!res.ok) return { success: false, message: `HTTP ${res.status}` };
-        return await res.json();
+        const data = await res.json();
+        addDebugLog(`Response ${endpoint}: ${JSON.stringify(data).substring(0, 200)}`, data.success ? 'success' : 'error');
+        return data;
       } catch (e) {
         clearTimeout(timer);
+        addDebugLog(`Error ${endpoint}: ${e.message}`, 'error');
         return { success: false, message: e.name === 'AbortError' ? 'Request timeout' : e.message };
       }
     }
@@ -224,6 +227,7 @@
     async function handleLogin(e) {
       e.preventDefault();
       showLoading();
+      addDebugLog('Memulai proses login...', 'info');
       const result = await apiCall('/auth/login', 'POST', { 
         username: document.getElementById('username').value, 
         password: document.getElementById('password').value, 
@@ -232,12 +236,13 @@
       if (result.success) {
         currentUser = result;
         localStorage.setItem('absensiAppSession', JSON.stringify(result));
+        addDebugLog(`Login sukses sebagai ${currentUser.role}: ${currentUser.nama}`, 'success');
         document.getElementById('loginPage').classList.add('hidden');
         document.getElementById('dashboardContainer').classList.remove('hidden');
-        await loadAppConfig();
         await initDashboard();
       } else {
         hideLoading();
+        addDebugLog(`Login gagal: ${result.message}`, 'error');
         const errDiv = document.getElementById('loginError');
         document.getElementById('errorText').innerText = result.message;
         errDiv.classList.remove('hidden');
@@ -248,7 +253,10 @@
     async function loadAppConfig() {
       if (!currentUser?.token) return;
       const result = await apiCall('/config', 'GET', null, currentUser.token);
-      if (result.success && result.data) appConfig = result.data;
+      if (result.success && result.data) {
+        appConfig = result.data;
+        addDebugLog(`Konfigurasi dimuat: Batas terlambat ${appConfig.jam_masuk_akhir}`, 'success');
+      }
     }
 
     function checkSession() {
@@ -258,6 +266,7 @@
           const data = JSON.parse(stored);
           if (data?.success) {
             currentUser = data;
+            addDebugLog(`Session ditemukan: ${currentUser.nama}`, 'success');
             document.getElementById('loginPage').classList.add('hidden');
             document.getElementById('dashboardContainer').classList.remove('hidden');
             loadAppConfig().then(() => initDashboard());
@@ -265,15 +274,16 @@
           }
         } catch(e) {}
       }
+      addDebugLog('Tidak ada session tersimpan', 'info');
     }
 
     async function logout() {
-      if (scanner) try { await scanner.stop(); } catch(e) {}
       localStorage.removeItem('absensiAppSession');
       currentUser = null;
       document.getElementById('dashboardContainer').innerHTML = '';
       document.getElementById('dashboardContainer').classList.add('hidden');
       document.getElementById('loginPage').classList.remove('hidden');
+      addDebugLog('Logout berhasil', 'success');
     }
 
     // ==========================================================================
@@ -301,7 +311,27 @@
               <h2 id="pageTitle" class="text-lg font-bold">Dashboard</h2>
               <div><p id="currentDateDisplay" class="text-xs text-gray-500"></p></div>
             </header>
-            <div id="mainContent" class="p-6"><div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div></div>
+            <div id="mainContent" class="p-6">
+              <div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>
+            </div>
+            <!-- DEBUG PANEL -->
+            <div class="fixed bottom-4 right-4 z-50">
+              <button onclick="toggleDebugPanel()" class="bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700">
+                <i class="fas fa-bug"></i>
+              </button>
+            </div>
+            <div id="debugPanelContainer" class="fixed bottom-16 right-4 z-50 hidden w-96">
+              <div class="bg-gray-900 rounded-lg shadow-xl overflow-hidden">
+                <div class="bg-gray-800 px-3 py-2 flex justify-between items-center">
+                  <span class="text-white text-xs font-mono">Debug Console</span>
+                  <button onclick="toggleDebugPanel()" class="text-gray-400 hover:text-white">&times;</button>
+                </div>
+                <div id="debugPanel" class="debug-panel h-80"></div>
+                <div class="bg-gray-800 px-3 py-2">
+                  <button onclick="clearDebugLogs()" class="text-xs text-gray-400 hover:text-white">Clear</button>
+                </div>
+              </div>
+            </div>
           </main>
         </div>
       `;
@@ -316,11 +346,9 @@
         menuHtml.push(`<a onclick="loadMonitoringAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-eye w-5"></i><span>Monitoring</span></a>`);
         menuHtml.push(`<a onclick="loadRekapAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-file-alt w-5"></i><span>Laporan</span></a>`);
         menuHtml.push(`<a onclick="loadKelolaLibur()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-calendar-alt w-5"></i><span>Hari Libur</span></a>`);
-        menuHtml.push(`<a onclick="loadScanAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-camera w-5"></i><span>Scan Absensi</span></a>`);
       } else if (role === 'guru') {
         menuHtml.push(`<a onclick="loadGuruDashboard()" class="flex items-center space-x-3 px-4 py-3 rounded-xl bg-indigo-600 text-white cursor-pointer"><i class="fas fa-home w-5"></i><span>Dashboard</span></a>`);
         menuHtml.push(`<a onclick="loadMonitoringAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-eye w-5"></i><span>Monitoring</span></a>`);
-        menuHtml.push(`<a onclick="loadScanAbsensi()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-camera w-5"></i><span>Scan Absensi</span></a>`);
       } else {
         menuHtml.push(`<a onclick="loadSiswaDashboard()" class="flex items-center space-x-3 px-4 py-3 rounded-xl bg-indigo-600 text-white cursor-pointer"><i class="fas fa-home w-5"></i><span>Dashboard</span></a>`);
         menuHtml.push(`<a onclick="showQRCode()" class="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 cursor-pointer"><i class="fas fa-qrcode w-5"></i><span>QR Code Saya</span></a>`);
@@ -346,61 +374,40 @@
       }
     }
 
-    // ==========================================================================
-    // ADMIN DASHBOARD
-    // ==========================================================================
-    async function loadAdminDashboard() {
-      const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
-      const result = await apiCall('/absensi/monitoring', 'GET', null, currentUser.token);
-      if (result.success) {
-        const data = result.data;
-        const total = data.length, hadir = data.filter(d=>d.status==='Hadir').length, sakit = data.filter(d=>d.status==='Sakit').length, izin = data.filter(d=>d.status==='Izin').length, alpa = data.filter(d=>d.status==='Alpa').length;
-        content.innerHTML = `
-          <div class="space-y-6"><div class="flex justify-between"><div><h1 class="text-2xl font-bold">Dashboard Admin</h1><p class="text-gray-500 text-sm">Pusat kontrol data absensi sekolah</p></div><button onclick="refreshDashboard()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt mr-2"></i>Refresh</button></div>
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-4">${[['Total',total,'users'],['Hadir',hadir,'check'],['Sakit',sakit,'procedures'],['Izin',izin,'paper-plane'],['Alpa',alpa,'times']].map(([l,v,i])=>`<div class="bg-white p-5 rounded-xl shadow-sm"><p class="text-xs text-gray-400">${l}</p><div class="flex justify-between items-center"><h3 class="text-2xl font-bold">${v}</h3><div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center"><i class="fas fa-${i}"></i></div></div></div>`).join('')}</div>
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 bg-white rounded-2xl p-6"><canvas id="adminChart"></canvas></div><div class="bg-white rounded-2xl p-6"><h3 class="font-bold mb-4">Akses Cepat</h3><div class="space-y-3">${[['Data Siswa','user-graduate','loadDataSiswa()'],['Data Guru','chalkboard-teacher','loadDataGuru()'],['Monitoring','eye','loadMonitoringAbsensi()'],['Laporan','file-alt','loadRekapAbsensi()'],['Hari Libur','calendar-alt','loadKelolaLibur()'],['Scan Absensi','camera','loadScanAbsensi()']].map(([l,i,fn])=>`<button onclick="${fn}" class="w-full flex items-center p-3 rounded-xl border hover:bg-indigo-50"><div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center mr-3"><i class="fas fa-${i}"></i></div><div class="font-bold text-sm">${l}</div></button>`).join('')}</div></div></div></div>`;
-        const ctx = document.getElementById('adminChart')?.getContext('2d');
-        if (ctx) { if (adminChart) adminChart.destroy(); adminChart = new Chart(ctx, { type: 'bar', data: { labels: ['Hadir','Sakit','Izin','Alpa'], datasets: [{ data: [hadir,sakit,izin,alpa], backgroundColor: ['#10B981','#EAB308','#3B82F6','#EF4444'] }] }, options: { responsive: true, maintainAspectRatio: false } }); }
-      }
+    function toggleDebugPanel() {
+      const panel = document.getElementById('debugPanelContainer');
+      if (panel) panel.classList.toggle('hidden');
+    }
+
+    function clearDebugLogs() {
+      debugLogs = [];
+      updateDebugPanel();
     }
 
     // ==========================================================================
-    // GURU DASHBOARD
-    // ==========================================================================
-    async function loadGuruDashboard() {
-      const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
-      const kelas = currentUser.kelas;
-      const result = await apiCall(kelas ? `/absensi/monitoring?kelas=${kelas}` : '/absensi/monitoring', 'GET', null, currentUser.token);
-      if (result.success) {
-        const data = result.data;
-        const total = data.length, sakit = data.filter(d=>d.status==='Sakit').length, izin = data.filter(d=>d.status==='Izin').length, alpa = data.filter(d=>d.status==='Alpa').length, hadir = data.filter(d=>d.status==='Hadir').length;
-        content.innerHTML = `<div class="space-y-6"><div class="flex justify-between"><h1 class="text-2xl font-bold">Dashboard Guru</h1><button onclick="refreshDashboard()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm"><i class="fas fa-sync-alt mr-2"></i>Refresh</button></div><div class="grid grid-cols-2 md:grid-cols-4 gap-4">${[['Total',total,'users'],['Sakit',sakit,'procedures'],['Izin',izin,'paper-plane'],['Alpa',alpa,'times']].map(([l,v,i])=>`<div class="bg-white p-5 rounded-xl"><p class="text-xs text-gray-400">${l}</p><h3 class="text-3xl font-bold">${v}</h3><div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mt-2"><i class="fas fa-${i}"></i></div></div>`).join('')}</div><div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="bg-white rounded-2xl p-6"><canvas id="guruChart"></canvas></div><div class="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white text-center"><div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl mx-auto mb-4"><i class="fas fa-camera"></i></div><h3 class="font-bold">Scan Absensi</h3><button onclick="loadScanAbsensi()" class="mt-4 bg-white text-indigo-700 px-6 py-2 rounded-lg text-sm font-bold w-full">Buka Scanner</button></div></div></div>`;
-        const ctx = document.getElementById('guruChart')?.getContext('2d');
-        if (ctx) { if (guruChart) guruChart.destroy(); guruChart = new Chart(ctx, { type: 'bar', data: { labels: ['Hadir','Sakit','Izin','Alpa'], datasets: [{ data: [hadir,sakit,izin,alpa], backgroundColor: ['#10B981','#EAB308','#3B82F6','#EF4444'] }] }, options: { responsive: true, maintainAspectRatio: false } }); }
-      }
-    }
-
-    // ==========================================================================
-    // SISWA DASHBOARD (FIXED - DATA DARI GOOGLE SHEETS TERBACA)
+    // SISWA DASHBOARD - DIREK TAMPILKAN DATA DARI API
     // ==========================================================================
     async function loadSiswaDashboard() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
+      content.innerHTML = `
+        <div class="space-y-6">
+          <div class="bg-white rounded-2xl p-6 shadow-sm">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">Dashboard Siswa</h2>
+            <p class="text-gray-500 text-sm">Loading data absensi...</p>
+            <div class="flex justify-center py-10"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>
+          </div>
+        </div>
+      `;
       
-      // Panggil API untuk mendapatkan data absensi
+      addDebugLog(`Mengambil data absensi untuk NISN: ${currentUser.nisn}`, 'info');
+      
+      // Panggil API absensi
       const absensiResult = await apiCall(`/absensi/today/${currentUser.nisn}`, 'GET', null, currentUser.token, 20000);
       
-      console.log('=== DEBUG ABSENSI HASIL ===');
-      console.log('Full response:', absensiResult);
-      console.log('Data:', absensiResult.data);
-      console.log('Jam Datang:', absensiResult.data?.jamDatang);
-      console.log('Jam Pulang:', absensiResult.data?.jamPulang);
+      addDebugLog(`Data absensi diterima: ${JSON.stringify(absensiResult)}`, absensiResult.success ? 'success' : 'error');
       
       const today = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
       
-      // Ambil data absensi dengan aman
       let jamDatang = '--:--';
       let jamPulang = '--:--';
       let statusMessage = 'Belum melakukan absensi hari ini';
@@ -413,6 +420,8 @@
         absenData = absensiResult.data;
         jamDatang = absenData.jamDatang || '--:--';
         jamPulang = absenData.jamPulang || '--:--';
+        
+        addDebugLog(`Jam Datang: ${jamDatang}, Jam Pulang: ${jamPulang}`, 'info');
         
         if (absenData.jamDatang && absenData.jamDatang !== '--:--') {
           const isLate = absenData.jamDatang > appConfig.jam_masuk_akhir;
@@ -438,9 +447,8 @@
           statusColor = 'yellow';
           statusIcon = 'fa-procedures';
         }
-      } else if (absensiResult.error) {
-        console.warn('API Error:', absensiResult.error);
-        statusMessage = 'Gagal memuat data absensi. Silakan refresh.';
+      } else {
+        addDebugLog(`Gagal mengambil data: ${absensiResult.message}`, 'error');
       }
       
       const showForm = !absenData || !absenData.jamDatang || absenData.jamDatang === '--:--';
@@ -465,7 +473,7 @@
                   <p class="text-2xl font-mono font-bold">${jamDatang}</p>
                 </div>
                 <div class="bg-white/10 rounded-xl p-4 text-center">
-                  <p class="text-xs opacity-80">Jam Pulang (Buka: ${appConfig.jam_pulang_mulai})</p>
+                  <p class="text-xs opacity-80">Jam Pulang</p>
                   <p class="text-2xl font-mono font-bold">${jamPulang}</p>
                 </div>
               </div>
@@ -500,6 +508,13 @@
               <h3 class="font-bold text-gray-800 mb-3"><i class="fas fa-qrcode text-indigo-500 mr-2"></i> QR Code Saya</h3>
               <div id="qrCodeContainer" class="flex justify-center mb-3"></div>
               <p class="text-xs text-gray-400">Tunjukkan QR Code ini kepada guru untuk absen</p>
+            </div>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+              <p class="text-xs text-yellow-700"><i class="fas fa-lightbulb mr-1"></i> <strong>Debug Info:</strong><br>
+              API Status: ${absensiResult.success ? '✅ Berhasil' : '❌ Gagal'}<br>
+              Data: ${absenData ? JSON.stringify(absenData).substring(0, 100) : 'null'}<br>
+              Jam Datang dari API: ${jamDatang}
+              </p>
             </div>
             <button onclick="refreshDashboard()" class="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium">Refresh Data</button>
           </div>
@@ -564,164 +579,73 @@
     }
 
     // ==========================================================================
-    // SCAN ABSENSI (Admin/Guru)
+    // DASHBOARD LAINNYA (SEDERHANA)
     // ==========================================================================
-    async function loadScanAbsensi() {
+    async function loadAdminDashboard() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `
-        <div class="max-w-md mx-auto">
-          <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div class="p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center"><h3 class="font-bold text-lg">Scan QR Code Absensi</h3><p class="text-xs opacity-90 mt-1">Arahkan kamera ke QR Code siswa</p></div>
-            <div class="p-6">
-              <div class="flex gap-3 mb-4">
-                <label class="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl cursor-pointer border-2 border-green-500 bg-green-100" id="labelDatang"><input type="radio" name="scanType" value="datang" checked class="hidden"><i class="fas fa-sign-in-alt text-green-600"></i><span class="font-bold text-green-700 text-sm">Absen Datang</span></label>
-                <label class="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl cursor-pointer border-2 border-gray-200 bg-gray-50" id="labelPulang"><input type="radio" name="scanType" value="pulang" class="hidden"><i class="fas fa-sign-out-alt text-blue-600"></i><span class="font-bold text-blue-700 text-sm">Absen Pulang</span></label>
-              </div>
-              <div id="qr-reader" style="width: 100%;"></div>
-              <div id="qr-reader-results" class="mt-4 text-center text-sm"></div>
-              <button onclick="stopScanner()" class="w-full mt-4 bg-gray-200 text-gray-700 py-2 rounded-lg font-medium">Kembali</button>
-            </div>
-          </div>
-        </div>
-      `;
-      
-      const labelDatang = document.getElementById('labelDatang');
-      const labelPulang = document.getElementById('labelPulang');
-      if (labelDatang && labelPulang) {
-        const radioDatang = labelDatang.querySelector('input');
-        const radioPulang = labelPulang.querySelector('input');
-        radioDatang.addEventListener('change', () => { if(radioDatang.checked) { labelDatang.classList.add('border-green-500', 'bg-green-100'); labelPulang.classList.remove('border-blue-500', 'bg-blue-100'); labelPulang.classList.add('border-gray-200', 'bg-gray-50'); } });
-        radioPulang.addEventListener('change', () => { if(radioPulang.checked) { labelPulang.classList.add('border-blue-500', 'bg-blue-100'); labelDatang.classList.remove('border-green-500', 'bg-green-100'); labelDatang.classList.add('border-gray-200', 'bg-gray-50'); } });
-      }
-      
-      startScanner();
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Dashboard Admin</h2><p>Selamat datang, ${currentUser.nama}</p><button onclick="refreshDashboard()" class="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg">Refresh</button></div>`;
     }
 
-    async function startScanner() {
-      const qrReader = document.getElementById('qr-reader');
-      if (!qrReader) return;
-      qrReader.innerHTML = '';
-      scanner = new Html5Qrcode("qr-reader");
-      const config = { fps: 10, qrbox: { width: 300, height: 300 }, aspectRatio: 1.0 };
-      try {
-        await scanner.start({ facingMode: "environment" }, config, onScanSuccess, onScanError);
-      } catch (err) {
-        document.getElementById('qr-reader-results').innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg">Gagal akses kamera: ${err}</div>`;
-      }
+    async function loadGuruDashboard() {
+      const content = document.getElementById('mainContent');
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Dashboard Guru</h2><p>Selamat datang, ${currentUser.nama}</p><button onclick="refreshDashboard()" class="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg">Refresh</button></div>`;
     }
 
-    let isProcessing = false;
-    async function onScanSuccess(decodedText) {
-      if (isProcessing) return;
-      isProcessing = true;
-      const scanType = document.querySelector('input[name="scanType"]:checked')?.value || 'datang';
-      if (scanner) try { await scanner.stop(); } catch(e) {}
-      document.getElementById('qr-reader-results').innerHTML = `<div class="bg-indigo-100 text-indigo-700 p-3 rounded-lg animate-pulse"><i class="fas fa-spinner fa-spin mr-2"></i> Memproses...</div>`;
-      
-      const result = await apiCall('/absensi/scan', 'POST', { nisn: decodedText, type: scanType, scannerRole: currentUser.role, scannerKelas: currentUser.kelas }, currentUser.token);
-      
-      if (result.success) {
-        document.getElementById('qr-reader-results').innerHTML = `<div class="bg-green-100 text-green-700 p-3 rounded-lg"><i class="fas fa-check-circle mr-2"></i> ${result.message}</div>`;
-        setTimeout(() => refreshDashboard(), 2000);
-      } else {
-        document.getElementById('qr-reader-results').innerHTML = `<div class="bg-red-100 text-red-700 p-3 rounded-lg"><i class="fas fa-times-circle mr-2"></i> ${result.message}</div>`;
-        setTimeout(() => { isProcessing = false; startScanner(); }, 3000);
-      }
-    }
-
-    function onScanError() {}
-
-    async function stopScanner() {
-      if (scanner) try { await scanner.stop(); scanner = null; } catch(e) {}
-      refreshDashboard();
-    }
-
-    // ==========================================================================
-    // DATA SISWA (CRUD)
-    // ==========================================================================
     async function loadDataSiswa() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Data Siswa</h2><div class="flex justify-center py-10"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div></div>`;
       const result = await apiCall('/siswa', 'GET', null, currentUser.token);
       if (result.success) {
         const siswa = result.data;
-        content.innerHTML = `
-          <div class="bg-white rounded-xl shadow-sm overflow-hidden"><div class="p-4 border-b flex justify-between"><h3 class="font-bold">Data Siswa</h3><button onclick="showAddSiswaModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm"><i class="fas fa-plus mr-1"></i>Tambah</button></div><div class="p-4"><input type="text" id="searchSiswa" onkeyup="filterSiswa()" placeholder="Cari nama/NISN..." class="w-full p-2 border rounded-lg text-sm"></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">No</th><th class="p-3">Nama</th><th class="p-3">NISN</th><th class="p-3">Kelas</th><th class="p-3">Aksi</th></tr></thead><tbody id="siswaTable">${siswa.map((s,i)=>`<tr class="border-b"><td class="p-3">${i+1}</td><td class="p-3 font-medium">${s.nama}</td><td class="p-3">${s.nisn}</td><td class="p-3"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">${s.kelas}</span></td><td class="p-3 text-center"><button onclick='editSiswaModal(${JSON.stringify(s).replace(/'/g, "&apos;")})' class="text-amber-600 mr-2"><i class="fas fa-edit"></i></button><button onclick="deleteSiswa('${s.nisn}','${s.nama}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></td>`).join('')}</tbody></table></div></div>
-        `;
+        content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Data Siswa (${siswa.length})</h2><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Nama</th><th class="p-2">NISN</th><th class="p-2">Kelas</th></tr></thead><tbody>${siswa.map(s=>`<tr class="border-b"><td class="p-2">${s.nama}</td><td class="p-2">${s.nisn}</td><td class="p-2">${s.kelas}</td></tr>`).join('')}</tbody></tr></div><button onclick="refreshDashboard()" class="mt-4 bg-gray-200 px-4 py-2 rounded-lg">Kembali</button></div>`;
       }
     }
 
-    window.filterSiswa = function() { const keyword = document.getElementById('searchSiswa')?.value.toLowerCase() || ''; document.querySelectorAll('#siswaTable tr').forEach(row => { row.style.display = row.innerText.toLowerCase().includes(keyword) ? '' : 'none'; }); };
-    window.showAddSiswaModal = () => showModal(`<div class="bg-white rounded-2xl p-6 max-w-md"><h3 class="text-xl font-bold mb-4">Tambah Siswa</h3><form onsubmit="saveSiswa(event, false)"><input name="nama" placeholder="Nama" class="w-full p-2 border rounded mb-3" required><input name="nisn" placeholder="NISN" class="w-full p-2 border rounded mb-3" required><input name="kelas" placeholder="Kelas" class="w-full p-2 border rounded mb-3" required><div class="flex justify-end gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded">Batal</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Simpan</button></div></form></div>`);
-    window.editSiswaModal = (s) => showModal(`<div class="bg-white rounded-2xl p-6 max-w-md"><h3 class="text-xl font-bold mb-4">Edit Siswa</h3><form onsubmit="saveSiswa(event, true)"><input name="nama" value="${s.nama}" class="w-full p-2 border rounded mb-3" required><input name="nisn" value="${s.nisn}" class="w-full p-2 border rounded mb-3 bg-gray-100" readonly><input name="kelas" value="${s.kelas}" class="w-full p-2 border rounded mb-3" required><input type="hidden" name="oldNisn" value="${s.nisn}"><div class="flex justify-end gap-2"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded">Batal</button><button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Simpan</button></div></form></div>`);
-    async function saveSiswa(e, isEdit) { e.preventDefault(); showLoading(); const fd = new FormData(e.target); const data = { nama: fd.get('nama'), nisn: fd.get('nisn'), kelas: fd.get('kelas') }; let res; if (isEdit) res = await apiCall(`/siswa/${fd.get('oldNisn')}`, 'PUT', data, currentUser.token); else res = await apiCall('/siswa', 'POST', data, currentUser.token); hideLoading(); if (res.success) { closeModal(); loadDataSiswa(); showAlert('success', res.message); } else showAlert('error', res.message); }
-    async function deleteSiswa(nisn, nama) { const conf = await Swal.fire({ title: 'Hapus?', text: `Hapus ${nama}?`, icon: 'warning', showCancelButton: true }); if (conf.isConfirmed) { showLoading(); const res = await apiCall(`/siswa/${nisn}`, 'DELETE', null, currentUser.token); hideLoading(); if (res.success) loadDataSiswa(); else showAlert('error', res.message); } }
-
-    // ==========================================================================
-    // DATA GURU
-    // ==========================================================================
     async function loadDataGuru() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
-      const res = await apiCall('/guru', 'GET', null, currentUser.token);
-      if (res.success) content.innerHTML = `<div class="bg-white rounded-xl overflow-hidden"><div class="p-4 border-b"><h3 class="font-bold">Data Guru</h3></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">Username</th><th class="p-3">Nama</th><th class="p-3">Kelas</th><th class="p-3">Role</th></tr></thead><tbody>${res.data.map(g=>`<tr class="border-b"><td class="p-3">${g.username}</td><td class="p-3">${g.nama}</td><td class="p-3">${g.kelas||'-'}</td><td class="p-3"><span class="px-2 py-1 rounded text-xs ${g.role==='admin'?'bg-purple-100 text-purple-700':'bg-gray-100'}">${g.role}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Data Guru</h2><div class="flex justify-center py-10"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div></div>`;
+      const result = await apiCall('/guru', 'GET', null, currentUser.token);
+      if (result.success) {
+        content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Data Guru</h2><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Username</th><th class="p-2">Nama</th><th class="p-2">Role</th></tr></thead><tbody>${result.data.map(g=>`<tr class="border-b"><td class="p-2">${g.username}</td><td class="p-2">${g.nama}</td><td class="p-2">${g.role}</td></tr>`).join('')}</tbody></table></div><button onclick="refreshDashboard()" class="mt-4 bg-gray-200 px-4 py-2 rounded-lg">Kembali</button></div>`;
+      }
     }
 
-    // ==========================================================================
-    // MONITORING
-    // ==========================================================================
     async function loadMonitoringAbsensi() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div>`;
-      const kelas = currentUser.role === 'guru' ? currentUser.kelas : null;
-      const res = await apiCall(kelas ? `/absensi/monitoring?kelas=${kelas}` : '/absensi/monitoring', 'GET', null, currentUser.token);
-      if (res.success) {
-        content.innerHTML = `<div class="bg-white rounded-xl overflow-hidden"><div class="p-4 border-b"><h3 class="font-bold">Monitoring Kehadiran</h3><p class="text-xs text-gray-500">${new Date().toLocaleDateString('id-ID')}</p></div><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-3">Nama</th><th class="p-3">Kelas</th><th class="p-3">Datang</th><th class="p-3">Pulang</th><th class="p-3">Status</th></tr></thead><tbody>${res.data.map(d=>`<tr class="border-b"><td class="p-3 font-medium">${d.nama}</td><td class="p-3">${d.kelas}</td><td class="p-3">${d.jamDatang || '-'}</td><td class="p-3">${d.jamPulang || '-'}</td><td class="p-3"><span class="px-2 py-1 rounded text-xs ${d.status==='Hadir'?'bg-green-100':d.status==='Izin'?'bg-blue-100':d.status==='Sakit'?'bg-yellow-100':'bg-gray-100'}">${d.status || '-'}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Monitoring</h2><div class="flex justify-center py-10"><div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-200 border-t-indigo-600"></div></div></div>`;
+      const result = await apiCall('/absensi/monitoring', 'GET', null, currentUser.token);
+      if (result.success) {
+        content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Monitoring Kehadiran</h2><div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Nama</th><th class="p-2">Kelas</th><th class="p-2">Status</th></tr></thead><tbody>${result.data.map(d=>`<tr class="border-b"><td class="p-2">${d.nama}</td><td class="p-2">${d.kelas}</td><td class="p-2"><span class="px-2 py-1 rounded text-xs ${d.status==='Hadir'?'bg-green-100':d.status==='Izin'?'bg-blue-100':d.status==='Sakit'?'bg-yellow-100':'bg-gray-100'}">${d.status}</span></td></tr>`).join('')}</tbody></table></div><button onclick="refreshDashboard()" class="mt-4 bg-gray-200 px-4 py-2 rounded-lg">Kembali</button></div>`;
       }
     }
 
-    // ==========================================================================
-    // REKAP ABSENSI
-    // ==========================================================================
     async function loadRekapAbsensi() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="bg-white rounded-xl p-6"><div class="flex gap-4 mb-4"><input type="date" id="startDate" class="p-2 border rounded flex-1"><input type="date" id="endDate" class="p-2 border rounded flex-1"><button onclick="applyRekap()" class="bg-indigo-600 text-white px-4 rounded">Cari</button></div><div id="rekapResult" class="text-center text-gray-500 py-10">Pilih tanggal untuk melihat laporan</div></div>`;
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Rekap Absensi</h2><div class="flex gap-2 mb-4"><input type="date" id="startDate" class="p-2 border rounded"><input type="date" id="endDate" class="p-2 border rounded"><button onclick="applyRekap()" class="bg-indigo-600 text-white px-4 rounded">Cari</button></div><div id="rekapResult"></div><button onclick="refreshDashboard()" class="mt-4 bg-gray-200 px-4 py-2 rounded-lg">Kembali</button></div>`;
     }
 
-    window.applyRekap = async () => { const start = document.getElementById('startDate').value, end = document.getElementById('endDate').value; if (!start || !end) return showAlert('error', 'Pilih tanggal'); showLoading(); const res = await apiCall(`/absensi/rekap?tanggalMulai=${start}&tanggalAkhir=${end}`, 'GET', null, currentUser.token); hideLoading(); const resultDiv = document.getElementById('rekapResult'); if (res.success && res.data && res.data.length) resultDiv.innerHTML = `<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Tanggal</th><th class="p-2">Nama</th><th class="p-2">Kelas</th><th class="p-2">Datang</th><th class="p-2">Pulang</th><th class="p-2">Status</th></tr></thead><tbody>${res.data.map(d=>`<tr class="border-b"><td class="p-2">${d.tanggal}</td><td class="p-2">${d.nama}</td><td class="p-2">${d.kelas}</td><td class="p-2">${d.jamDatang || '-'}</td><td class="p-2">${d.jamPulang || '-'}</td><td class="p-2"><span class="px-2 py-1 rounded text-xs ${d.status==='Hadir'?'bg-green-100':d.status==='Izin'?'bg-blue-100':d.status==='Sakit'?'bg-yellow-100':'bg-gray-100'}">${d.status || '-'}</span></td></tr>`).join('')}</tbody></table></div>`; else resultDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Tidak ada data</div>'; };
+    window.applyRekap = async () => {
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      if (!start || !end) return;
+      showLoading();
+      const res = await apiCall(`/absensi/rekap?tanggalMulai=${start}&tanggalAkhir=${end}`, 'GET', null, currentUser.token);
+      hideLoading();
+      const resultDiv = document.getElementById('rekapResult');
+      if (res.success && res.data && res.data.length) {
+        resultDiv.innerHTML = `<div class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Tanggal</th><th class="p-2">Nama</th><th class="p-2">Datang</th><th class="p-2">Pulang</th><th class="p-2">Status</th></tr></thead><tbody>${res.data.map(d=>`<tr class="border-b"><td class="p-2">${d.tanggal}</td><td class="p-2">${d.nama}</td><td class="p-2">${d.jamDatang}</td><td class="p-2">${d.jamPulang}</td><td class="p-2">${d.status}</td></tr>`).join('')}</tbody></table></div>`;
+      } else {
+        resultDiv.innerHTML = '<p class="text-center text-gray-500 py-4">Tidak ada data</p>';
+      }
+    };
 
-    // ==========================================================================
-    // KELOLA HARI LIBUR
-    // ==========================================================================
-    let liburList = [];
     async function loadKelolaLibur() {
       const content = document.getElementById('mainContent');
-      content.innerHTML = `<div class="space-y-6"><div class="flex justify-between"><div><h1 class="text-2xl font-bold">Kelola Hari Libur</h1></div><button onclick="refreshDashboard()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm">Kembali</button></div><div class="bg-white rounded-xl p-6"><h3 class="font-bold mb-4">Hari Libur Nasional</h3><div class="flex gap-2 mb-4"><input type="date" id="liburDate" class="p-2 border rounded flex-1"><input type="text" id="liburDesc" placeholder="Keterangan" class="p-2 border rounded flex-1"><button onclick="addLibur()" class="bg-rose-600 text-white px-4 rounded">Tambah</button></div><div id="liburTable" class="overflow-x-auto"><table class="w-full"><thead class="bg-gray-50"><tr><th class="p-2">Tanggal</th><th class="p-2">Keterangan</th><th class="p-2">Aksi</th></tr></thead><tbody id="liburBody"></tbody></table></div></div></div>`;
-      await loadLiburList();
+      content.innerHTML = `<div class="bg-white rounded-2xl p-6"><h2 class="text-xl font-bold mb-4">Kelola Hari Libur</h2><p>Fitur dalam pengembangan</p><button onclick="refreshDashboard()" class="mt-4 bg-gray-200 px-4 py-2 rounded-lg">Kembali</button></div>`;
     }
-
-    async function loadLiburList() {
-      const res = await apiCall('/config/holidays', 'GET', null, currentUser.token);
-      if (res.success && res.data) {
-        liburList = res.data;
-        document.getElementById('liburBody').innerHTML = liburList.map((l, i) => `<tr><td class="p-2 border">${l.tanggal}</td><td class="p-2 border">${l.keterangan}</td><td class="p-2 border text-center"><button onclick="deleteLibur('${l.tanggal}')" class="text-red-600"><i class="fas fa-trash"></i></button></td></tr>`).join('');
-      }
-    }
-
-    window.addLibur = async () => { const tanggal = document.getElementById('liburDate')?.value, keterangan = document.getElementById('liburDesc')?.value; if (!tanggal || !keterangan) return showAlert('error', 'Isi semua field'); showLoading(); const res = await apiCall('/config/holidays', 'POST', { tanggal, keterangan }, currentUser.token); hideLoading(); if (res.success) { loadKelolaLibur(); showAlert('success', 'Ditambahkan'); } else showAlert('error', res.message); };
-    window.deleteLibur = async (tanggal) => { showLoading(); const res = await apiCall(`/config/holidays/${tanggal}`, 'DELETE', null, currentUser.token); hideLoading(); if (res.success) { loadKelolaLibur(); showAlert('success', 'Dihapus'); } else showAlert('error', res.message); };
 
     function refreshDashboard() { if (currentUser.role === 'admin') loadAdminDashboard(); else if (currentUser.role === 'guru') loadGuruDashboard(); else loadSiswaDashboard(); }
     function closeModal() { document.getElementById('modalContainer').innerHTML = ''; }
-    function showModal(content) { document.getElementById('modalContainer').innerHTML = `<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onclick="closeModal()"><div class="relative w-full max-w-md" onclick="event.stopPropagation()">${content}</div></div>`; }
-
-    // Expose debug ke console
-    window.debugAbsensi = async () => {
-      console.log('=== DEBUG ABSENSI ===');
-      const result = await apiCall(`/absensi/today/${currentUser?.nisn}`, 'GET', null, currentUser?.token);
-      console.log('Result:', result);
-      return result;
-    };
 
     window.refreshDashboard = refreshDashboard;
     window.loadAdminDashboard = loadAdminDashboard;
@@ -732,9 +656,9 @@
     window.loadMonitoringAbsensi = loadMonitoringAbsensi;
     window.loadRekapAbsensi = loadRekapAbsensi;
     window.loadKelolaLibur = loadKelolaLibur;
-    window.loadScanAbsensi = loadScanAbsensi;
     window.showQRCode = showQRCode;
-    window.stopScanner = stopScanner;
+    window.toggleDebugPanel = toggleDebugPanel;
+    window.clearDebugLogs = clearDebugLogs;
     window.closeModal = closeModal;
     
     checkSession();
